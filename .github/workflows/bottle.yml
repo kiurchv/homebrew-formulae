@@ -1,0 +1,75 @@
+name: Bottle
+
+on:
+  push:
+    branches: [master]
+    paths: ['Formula/**']
+
+jobs:
+  build:
+    name: Build
+    runs-on: ${{matrix.os}}
+    strategy:
+      matrix:
+        os: [macos-latest]
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v1
+    - name: Set up Homebrew
+      run: |
+        brew update
+        brew cleanup
+    - name: Install tap
+      run: |
+        HOMEBREW_TAP_DIR="$(brew --prefix)/Homebrew/Library/Taps/$GITHUB_REPOSITORY"
+        mkdir -p "$HOMEBREW_TAP_DIR"
+        rm -rf "$HOMEBREW_TAP_DIR"
+        ln -s "$GITHUB_WORKSPACE" "$HOMEBREW_TAP_DIR"
+    - name: Test and build
+      run: |
+        brew test-bot\
+          --verbose\
+          --tap=$GITHUB_REPOSITORY\
+          $GITHUB_SHA
+    - name: Consolidate bottles
+      run: |
+        mkdir __BOTTLES__
+        mv *.bottle.* __BOTTLES__/
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v1
+      with:
+        name: bottles-${{github.sha}}-${{matrix.os}}
+        path: __BOTTLES__
+
+  upload:
+    name: Upload
+    needs: [build]
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: Set up Homebrew
+      run: |
+        brew update
+        brew cleanup
+    - name: Install tap
+      run: |
+        HOMEBREW_TAP_DIR="$(brew --prefix)/Homebrew/Library/Taps/$GITHUB_REPOSITORY"
+        mkdir -p "$HOMEBREW_TAP_DIR"
+        rm -rf "$HOMEBREW_TAP_DIR"
+        ln -s "$GITHUB_WORKSPACE" "$HOMEBREW_TAP_DIR"
+    - name: Download macOS artifacts
+      uses: actions/download-artifact@v1
+      with:
+        name: bottles-${{github.sha}}-macos-latest
+        path: '.'
+    - name: Upload bottles to Bintray
+      env:
+        HOMEBREW_ROOT_URL: https://dl.bintray.com/kiurchv/bottles-formulae
+        HOMEBREW_BINTRAY_USER: kiurchv
+        HOMEBREW_BINTRAY_KEY: ${{secrets.BINTRAY_KEY}}
+      run: |
+        brew test-bot\
+          --verbose\
+          --ci-upload\
+          --root-url=$HOMEBREW_ROOT_URL\
+          --bintray-org=$HOMEBREW_BINTRAY_USER
